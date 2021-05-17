@@ -4,6 +4,6 @@ Date of Submit : 17.5.2021
 
 Used:
 - language :           Nodejs
-- Ec2\Serverless(CF) : CF
+- EC2\Serverless(CF) : Serverless Cloud Formation
 - API :                Rest API
 - Database :           DynamoDB (noSql) 
