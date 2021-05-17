@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  Ex1Fin:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Ex1Fin
+      AttributeDefinitions:
+        - AttributeName: "id"
+          AttributeType: "S"
+      KeySchema: 
+        - AttributeName: "id"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+    DependsOn:
+      - DynamoDBQueryPolicy
+
+  DynamoDBQueryPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: DynamoDBQueryPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action: "dynamodb:*"
+            Resource: "*"
+      Roles:
+        - Ref: "TableRole"
+
+  TableRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "dynamodb.amazonaws.com"
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+
+  ApiGatewayRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      ApiKeySourceType: HEADER
+      Description: An API Gateway with a Lambda Integration
+      EndpointConfiguration:
+        Types:
+          - EDGE
+      Name: lambda-api
+
+  ApiGatewayResourceExit:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: 'exit' 
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethodExit:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        ConnectionType: INTERNET
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        TimeoutInMillis: 29000
+        Type: AWS_PROXY
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CloudEx1.Arn}/invocations'
+      OperationName: 'lambda'
+      ResourceId: !Ref ApiGatewayResourceExit
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayResourceEntry:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: 'entry'
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethodEntry:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        ConnectionType: INTERNET
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        TimeoutInMillis: 29000
+        Type: AWS_PROXY
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CloudEx1.Arn}/invocations'
+      OperationName: 'lambda'
+      ResourceId: !Ref ApiGatewayResourceEntry
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      ContentType: 'application/json'
+      RestApiId: !Ref ApiGatewayRestApi
+      Schema: {}
+
+  ApiGatewayStage:
+      Type: AWS::ApiGateway::Stage
+      Properties:
+        DeploymentId: !Ref ApiGatewayDeployment
+        Description: Lambda API Stage v0
+        RestApiId: !Ref ApiGatewayRestApi
+        StageName: 'v0'
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: 
+      - ApiGatewayMethodEntry
+      - ApiGatewayMethodExit
+    Properties:
+      Description: Lambda API Deployment
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ''
+            Effect: 'Allow'
+            Principal:
+              Service:
+                - 'apigateway.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+        - PolicyName: LambdaAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 'lambda:*'
+                Resource: 
+                  - !GetAtt CloudEx1.Arn
+  CloudEx1:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          const aws = require('aws-sdk');
+          const ddb = new aws.DynamoDB.DocumentClient({region: 'us-east-2'});
+          const tableName = "Ex1Fin";
+          const sec=1000;const min=60*sec;const quarter=15*min;const hour=60*min;const day=24*hour;const pay=2.5;
+          exports.handler = async (event, context, callback) => {
+              let path = event.path;let id = context.awsRequestId;let plate = event.queryStringParameters.plate;let parkingLot = event.queryStringParameters.parkingLot;let ticketId = event.queryStringParameters.ticketId;let data;
+              console.log(ticketId);
+              if (path !== '/entry' && path !== '/exit'){data = (null, {statusCode: 403,error: {error: `${path} is an invalid path`},headers: {'Access-Control-Allow-Origin': '*'}})
+              } else if ((plate === undefined && parkingLot === undefined) && ticketId !== undefined && path === `/exit`) {data = await exitResponse(ticketId);
+              } else if ((plate !== undefined && parkingLot !== undefined) && ticketId === undefined && path === `/entry`) {data = await entryResponse(id, plate, parkingLot);
+              } else {data = await invalidResponse();}
+              callback(null, data);};
+          const invalidResponse = async () => {return {statusCode: 400,error: {message: "invalid query string parameter"},headers: {'Access-Control-Allow-Origin': '*'}};};
+          const entryResponse = async (id, plate, parkingLot) => {
+              let data;
+              await insertNewTicket(id, plate, parkingLot).then(() => {
+                  data = {statusCode: 201,body: id,headers: {'Access-Control-Allow-Origin': '*'}};
+              }).catch((err) => {
+                  data = {statusCode: 400,error: err,headers: {'Access-Control-Allow-Origin': '*'}};}); 
+              return data;};
+          const exitResponse = async (ticketId) => {
+              let ticket; let newData;
+              await queryID(ticketId).then(async (data) => {ticket = data.Items[0];let timeParked = new Date() - new Date(JSON.parse(ticket.entryDate));newData = {statusCode: 200,body: JSON.stringify({plate: ticket.plate,time: timeCalcAsString(timeParked),parkingLot: ticket.parkingLot,charge: (myP(timeParked / quarter)) * pay,}),headers: {'Access-Control-Allow-Origin': '*'}};}).catch((err) => {newData = {statusCode: 400,error: err,headers: {'Access-Control-Allow-Origin': '*'}};});
+              return newData;};
+          async function insertNewTicket(id, plate, parkingLot) {
+              const params = {TableName: tableName,Item: {id: id,plate: plate,entryDate: JSON.stringify(new Date()),parkingLot: parkingLot,}};
+              ddb.put(params).promise();}
+          async function queryID(id) {
+              const params = {TableName: tableName,KeyConditionExpression: "#ID = :id",ExpressionAttributeNames: {"#ID": "id"},ExpressionAttributeValues: {":id": id}};
+              return ddb.query(params).promise();}
+          const timeCalcAsString = (ms) => {
+              if (ms < 0) {return "Nope";}
+              let days = ms / day;let hours = (ms % day) / hour;let mins = (ms % hour) / min;let secs = (ms % min) / sec;let ms1 = ms % sec;let val = `Your parked time in total is :`;
+              val += days > 0 ? ` ${myP(days)} days,` : '';val += hours > 0 ? ` ${myP(hours)} hours,` : '';val += mins > 0 ? ` ${myP(mins)} minutes,` : '';val += secs > 0 ? ` ${myP(secs)} seconds,` : '';val += ms1 > 0 ? ` ${myP(ms1)} milliseconds.`:'';val = val.charAt(val.length - 1 === ',')? val.slice(0, -1) + '.':val;
+              return val;};
+          const myP = (n) => parseInt(n);
+      Description: Parking Lot Enrty and Exit management
+      FunctionName: 'CloudEx1'
+      Handler: index.handler
+      MemorySize: 256
+      Role: !GetAtt TableRole.Arn
+      Runtime: nodejs12.x
+      Timeout: 60
+    DependsOn:
+      - TableRole
