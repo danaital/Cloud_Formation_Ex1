@@ -162,8 +162,7 @@ Resources:
           const sec=1000;const min=60*sec;const quarter=15*min;const hour=60*min;const day=24*hour;const pay=2.5;
           exports.handler = async (event, context, callback) => {
               let path = event.path;let id = context.awsRequestId;let plate = event.queryStringParameters.plate;let parkingLot = event.queryStringParameters.parkingLot;let ticketId = event.queryStringParameters.ticketId;let data;
-              console.log(ticketId);
-              if (path !== '/entry' && path !== '/exit'){data = (null, {statusCode: 403,error: {error: `${path} is an invalid path`},headers: {'Access-Control-Allow-Origin': '*'}})
+              if (path !== '/entry' && path !== '/exit'){data = {statusCode: 403,error: {message: `${path} is an invalid path`},headers: {'Access-Control-Allow-Origin': '*'}}
               } else if ((plate === undefined && parkingLot === undefined) && ticketId !== undefined && path === `/exit`) {data = await exitResponse(ticketId);
               } else if ((plate !== undefined && parkingLot !== undefined) && ticketId === undefined && path === `/entry`) {data = await entryResponse(id, plate, parkingLot);
               } else {data = await invalidResponse();}
